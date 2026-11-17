@@ -3,3 +3,8 @@ local.properties
 app/build/
 .idea/
 *.iml
+
+# Nao enviar arquivos binarios de chaves em commits. O arquivo .b64 e uma CHAVE PUBLICA DE TESTES.
+signing/*.jks
+signing/*.keystore
+dist/

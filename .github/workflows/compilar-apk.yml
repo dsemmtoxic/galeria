@@ -38,6 +38,9 @@ jobs:
       - name: Instalar API Android 35
         run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
 
+      - name: Restaurar e validar chave de assinatura de testes
+        run: bash ci/restaurar_assinatura.sh
+
       - name: Validar alteracoes no codigo
         run: python3 tests/SourceFlowChecks.py
 
