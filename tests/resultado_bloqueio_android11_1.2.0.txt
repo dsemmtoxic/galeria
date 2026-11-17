@@ -1,0 +1,5 @@
+Native Android PIN enables startup lock
+Home clears authentication session
+External viewer blocks media/audio until Android PIN succeeds
+PASS: 3 focused lock checks
+

@@ -1,0 +1,18 @@
+MediaStore observer: new photo appears while library is open
+Favorites: add, reopen preferences, remove
+Search: filename matches without accents
+Photo viewer: double tap enlarges decoded image
+Photo viewer: two-finger pinch enlarges image
+Right-side gesture: window brightness changes; system brightness stays unchanged
+Left-side gesture: media volume rises independently of brightness
+Rotation: viewer uses Android user orientation policy
+Viewer: five icon actions in requested order, no item counter
+Cache: viewer return keeps the grid and skips unchanged MediaStore queries
+Video viewer: right double tap +5 s; left double tap -5 s
+Video timeline: actual player seeks while finger is still dragging
+Albums/search and size order: album search hidden; file size visible on its thumbnail
+Large grid: 10000 files indexed in 785 ms, correct midpoint count
+Image editor: square crop, clockwise rotation, resize, saved copy; original preserved
+Video editor: crop, rotation, blur, mosaic, drawing, 160x96 H264 export with audio
+PASS: 16 integration checks
+

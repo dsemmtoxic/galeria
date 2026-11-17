@@ -1,0 +1,16 @@
+Main screen: bare top search, top settings, three footer destinations, no long search field
+Viewer recreation: exact three-file session and selected middle item recovered; navigation works both ways
+Viewer background/resume retains the full navigation list
+Viewer: reference-style 24dp symbols, five actions in order, large touch targets and no labels
+Lens contract: original image URI, correct MIME type and temporary read grant; missing app handled explicitly
+Search index: album, filename and screenshot-app suggestions; accented match highlighted correctly
+Search UI: top magnifier opens focused screen; typing suggests files; suggestion opens the three matching images
+Album contents: no search icon or long search field
+Other-owner photo renames directly and retains favorite without a system write request
+Other-owner deletion: no system dialog, bytes retained in journaled trash, favorite and preview preserved
+Restore: original directory, identical bytes and favorite restored without a system request
+Restore collision: existing file preserved; restored photo receives a unique name
+Permanent deletion: file removed directly; copied source remains intact
+Video: continuous float pinch zoom, drag on both axes, no accidental navigation or seeking
+PASS: 14 update integration checks
+

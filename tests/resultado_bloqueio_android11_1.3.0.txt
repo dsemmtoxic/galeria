@@ -1,0 +1,8 @@
+Native Android PIN enables startup lock
+Home and foreground return preserve authentication
+Screenshots allowed while startup protection is enabled
+Restored task retains its session only within the same Android task and boot
+Closing the app task invalidates authentication
+External viewer blocks media/audio until Android PIN succeeds
+PASS: 6 focused lock checks
+

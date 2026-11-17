@@ -1,0 +1,74 @@
+name: Compilar APK - Galeria
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: galeria-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compilar:
+    name: Compilar APK instalavel
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Baixar codigo do repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar e validar Gradle Wrapper
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Instalar API Android 35
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Validar alteracoes no codigo
+        run: python3 tests/SourceFlowChecks.py
+
+      - name: Compilar APK debug assinado
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Preparar APK para download
+        run: python3 ci/prepare_apk.py
+
+      - name: Conferir assinatura e integridade
+        run: |
+          for apk in dist/*.apk; do
+            "${ANDROID_SDK_ROOT}/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          done
+          sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
+          ls -lh dist/
+
+      - name: Enviar APK para os artefatos
+        uses: actions/upload-artifact@v4
+        with:
+          name: Galeria-APK-instalavel
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Mostrar como baixar
+        run: |
+          echo '## APK gerado' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Abra **Artifacts** nesta execucao e baixe **Galeria-APK-instalavel**.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Extraia o ZIP baixado pelo GitHub para encontrar o arquivo `.apk`.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Esta e uma compilacao **debug**, assinada com a chave de testes do projeto.' >> "$GITHUB_STEP_SUMMARY"

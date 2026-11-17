@@ -1,0 +1,4 @@
+Native finger scroll: navigation hides downward and returns upward
+Scrollbar: a 3px movement updates the fraction continuously within one row
+PASS: 2 native scroll checks
+
