@@ -26,7 +26,7 @@ public final class ThumbLoader {
     private static final class Job {final String key;final MediaItem item;final int size;final java.util.List<Ticket> tickets=new java.util.concurrent.CopyOnWriteArrayList<>();final CancellationSignal signal=new CancellationSignal();Job(String k,MediaItem m,int s){key=k;item=m;size=s;}boolean wanted(){for(Ticket t:tickets)if(!t.cancelled&&t.view.get()!=null)return true;return false;}}
     private ThumbLoader(Context c) {
         context=c.getApplicationContext();disk=new java.io.File(context.getCacheDir(),"thumbnails-v2");disk.mkdirs();
-        int memory=(int)Math.min(48L*1024*1024,Runtime.getRuntime().maxMemory()/8);
+        int memory=(int)Math.min(28L*1024*1024,Runtime.getRuntime().maxMemory()/10);
         cache=new LruCache<String,Bitmap>(memory){@Override protected int sizeOf(String key,Bitmap value){return value.getAllocationByteCount();}};
         worker.allowCoreThreadTimeOut(true);worker.execute(this::trimDisk);
     }
@@ -39,10 +39,20 @@ public final class ThumbLoader {
         if(view.getTag() instanceof Ticket&&key.equals(((Ticket)view.getTag()).key))return;
         clear(view);Ticket ticket=new Ticket(key,view);view.setTag(ticket);Bitmap cached=cache.get(key);
         if(cached!=null){view.setImageBitmap(cached);return;}
-        view.setImageDrawable(new Icons(m.video?"video":"photo",Ui.DIM));
+        view.setImageDrawable(new ThumbnailSkeleton());
         Job existing=jobs.get(key);if(existing!=null&&!existing.signal.isCanceled()){ticket.job=existing;existing.tickets.add(ticket);return;}
         Job job=new Job(key,m,size);ticket.job=job;job.tickets.add(ticket);jobs.put(key,job);
-        try{worker.execute(()->load(job));}catch(RejectedExecutionException e){jobs.remove(key);view.setTag(null);}
+        try{worker.execute(()->load(job));}catch(RejectedExecutionException e){
+            jobs.remove(key);ticket.job=null;
+            // If the visible grid temporarily floods the queue, retry only while
+            // this cell still wants the same media. Avoid a permanently blank skeleton.
+            main.postDelayed(()->{
+                ImageView target=ticket.view.get();
+                if(target!=null&&!ticket.cancelled&&target.getTag()==ticket){
+                    target.setTag(null);bind(target,m,requested);
+                }
+            },450);
+        }
     }
     private java.io.File file(String key){try{byte[] d=java.security.MessageDigest.getInstance("SHA-256").digest(key.getBytes("UTF-8"));StringBuilder b=new StringBuilder();for(byte v:d)b.append(String.format(java.util.Locale.ROOT,"%02x",v&255));return new java.io.File(disk,b+".jpg");}catch(Exception e){return new java.io.File(disk,Integer.toHexString(key.hashCode())+".jpg");}}
     private void load(Job job){
@@ -57,7 +67,7 @@ public final class ThumbLoader {
                     if(bitmap!=null&&Math.max(bitmap.getWidth(),bitmap.getHeight())>job.size){float scale=job.size/(float)Math.max(bitmap.getWidth(),bitmap.getHeight());Bitmap small=Bitmap.createScaledBitmap(bitmap,Math.max(1,Math.round(bitmap.getWidth()*scale)),Math.max(1,Math.round(bitmap.getHeight()*scale)),true);if(small!=bitmap)bitmap.recycle();bitmap=small;}
                     if(bitmap!=null&&!job.signal.isCanceled()){java.io.File tmp=new java.io.File(f+".tmp");try(java.io.FileOutputStream out=new java.io.FileOutputStream(tmp)){bitmap.compress(Bitmap.CompressFormat.JPEG,82,out);}tmp.renameTo(f);if(writes.incrementAndGet()%64==0)try{worker.execute(this::trimDisk);}catch(RejectedExecutionException ignored){}}
                 }else if(bitmap!=null)f.setLastModified(System.currentTimeMillis());
-                if(bitmap!=null)cache.put(job.key,bitmap);
+                if(bitmap!=null&&!job.signal.isCanceled())cache.put(job.key,bitmap);
             }
         }catch(Exception|OutOfMemoryError ignored){}
         final Bitmap result=bitmap;

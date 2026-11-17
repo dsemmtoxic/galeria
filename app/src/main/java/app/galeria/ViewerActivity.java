@@ -1,6 +1,10 @@
 package app.galeria;
 
 import android.app.*;
+import android.animation.ValueAnimator;
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.view.animation.DecelerateInterpolator;
 import android.content.*;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
@@ -28,6 +32,8 @@ public final class ViewerActivity extends SecureActivity implements ZoomImageVie
     private int lastVolume=-1;private boolean gestureOnRight;
     private List<MediaItem> items=new ArrayList<>();private int index;
     private FrameLayout root,media,hud,lockOverlay;private LinearLayout top,bottom;
+    private ImageView adjacentPreview,previousPreview,nextPreview;private int adjacentIndex=-1;private float swipeOffset;
+    private ValueAnimator swipeAnimator;private boolean swipeAnimating;
     private ZoomImageView photo;private PlayerSurface player;private TextView heading,caption,hudLabel;
     private ImageView favoriteIcon,hudIcon;private ProgressBar hudBar;
     private boolean controls=true,locked,trash,resumed,manualBrightness;
@@ -97,9 +103,17 @@ public final class ViewerActivity extends SecureActivity implements ZoomImageVie
     private int navInset(){int id=getResources().getIdentifier("navigation_bar_height","dimen","android");return id==0?Ui.dp(this,24):getResources().getDimensionPixelSize(id);}
     private void show(){
         if(items.isEmpty()||isFinishing())return;
+        if(swipeAnimator!=null){swipeAnimator.cancel();swipeAnimator=null;}
+        swipeAnimating=false;swipeOffset=0;adjacentIndex=-1;
+        if(previousPreview!=null)ThumbLoader.get(this).clear(previousPreview);
+        if(nextPreview!=null)ThumbLoader.get(this).clear(nextPreview);
+        adjacentPreview=previousPreview=nextPreview=null;
         if(photo!=null){photo.close();photo=null;}if(player!=null){player.release();player=null;}
         root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);setContentView(root);
-        media=new FrameLayout(this);root.addView(media,new FrameLayout.LayoutParams(-1,-1));
+        previousPreview=createNeighborCover();nextPreview=createNeighborCover();
+        if(index>0)ThumbLoader.get(this).bind(previousPreview,items.get(index-1),384);
+        if(index+1<items.size())ThumbLoader.get(this).bind(nextPreview,items.get(index+1),384);
+        media=new FrameLayout(this);media.setBackgroundColor(Color.BLACK);root.addView(media,new FrameLayout.LayoutParams(-1,-1));
         if(item().video){player=new PlayerSurface(this,item(),this,this::state);media.addView(player,new FrameLayout.LayoutParams(-1,-1));player.lifecycle(resumed);}
         else {photo=new ZoomImageView(this,this);media.addView(photo,new FrameLayout.LayoutParams(-1,-1));photo.lifecycle(resumed);photo.load(item());}
         top=Ui.column(this);top.setPadding(Ui.dp(this,8),statusInset()+Ui.dp(this,7),Ui.dp(this,8),Ui.dp(this,22));
@@ -131,6 +145,11 @@ public final class ViewerActivity extends SecureActivity implements ZoomImageVie
         if(photo!=null)photo.rotate(rotation());if(player!=null)player.rotate(rotation());
         buildHud();applyBrightness(currentBrightness);updateTitle();chrome(controls);if(locked)lock();state();
     }
+    private ImageView createNeighborCover(){
+        ImageView image=new ImageView(this);image.setBackgroundColor(Color.BLACK);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);image.setVisibility(View.GONE);
+        root.addView(image,new FrameLayout.LayoutParams(-1,-1));return image;
+    }
     private ImageView action(LinearLayout row,String icon,String label,Runnable click){
         FrameLayout cell=new FrameLayout(this);cell.setMinimumHeight(Ui.dp(this,60));cell.setBackground(Ui.ripple(this,Color.TRANSPARENT,18));cell.setContentDescription(label);cell.setFocusable(true);
         ImageView image=Ui.icon(this,icon,icon.equals("heartFill")?Ui.ACCENT:Ui.TEXT,24);image.setImageDrawable(new ViewerIcons(icon,icon.equals("heartFill")?Ui.ACCENT:Ui.TEXT));cell.addView(image,new FrameLayout.LayoutParams(Ui.dp(this,24),Ui.dp(this,24),Gravity.CENTER));
@@ -147,10 +166,10 @@ public final class ViewerActivity extends SecureActivity implements ZoomImageVie
     @Override protected void onLocked(){if(player!=null)player.lifecycle(false);if(photo!=null)photo.lifecycle(false);}
     @Override protected void onUnlocked(){if(resumed){if(player!=null)player.lifecycle(true);if(photo!=null)photo.lifecycle(true);schedule();}}
     @Override protected void onPause(){
-        resumed=false;super.onPause();cancelHide();if(player!=null)player.lifecycle(false);if(photo!=null)photo.lifecycle(false);
+        resumed=false;super.onPause();cancelHide();if(swipeAnimator!=null){swipeAnimator.cancel();swipeAnimator=null;swipeAnimating=false;}if(media!=null)media.setTranslationX(0);if(adjacentPreview!=null)adjacentPreview.setVisibility(View.GONE);if(player!=null)player.lifecycle(false);if(photo!=null)photo.lifecycle(false);
         WindowManager.LayoutParams a=getWindow().getAttributes();a.screenBrightness=originalBrightness;getWindow().setAttributes(a);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
-    @Override protected void onDestroy(){super.onDestroy();metadata.shutdownNow();audioWorker.shutdownNow();main.removeCallbacksAndMessages(null);if(photo!=null)photo.close();if(player!=null)player.release();if(actions!=null)actions.close();}
+    @Override protected void onDestroy(){super.onDestroy();if(swipeAnimator!=null)swipeAnimator.cancel();if(previousPreview!=null)ThumbLoader.get(this).clear(previousPreview);if(nextPreview!=null)ThumbLoader.get(this).clear(nextPreview);metadata.shutdownNow();audioWorker.shutdownNow();main.removeCallbacksAndMessages(null);if(photo!=null)photo.close();if(player!=null)player.release();if(actions!=null)actions.close();}
     @Override public void onConfigurationChanged(Configuration config){super.onConfigurationChanged(config);if(top!=null)top.setPadding(Ui.dp(this,8),statusInset()+Ui.dp(this,7),Ui.dp(this,8),Ui.dp(this,22));if(bottom!=null)bottom.setPadding(Ui.dp(this,6),Ui.dp(this,35),Ui.dp(this,6),navInset()+Ui.dp(this,7));}
     @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);if(!items.isEmpty())state.putString("uri",item().uri.toString());state.putString("session",sessionId);if(browseScope!=null)state.putBundle("scope",browseScope);state.putFloat("brightness",currentBrightness);state.putBoolean("manual_brightness",manualBrightness);}
     @Override public void tap(){if(!locked)chrome(!controls);}
@@ -173,8 +192,66 @@ public final class ViewerActivity extends SecureActivity implements ZoomImageVie
         return !locked&&!recovering&&index+direction>=0&&index+direction<items.size();
     }
     @Override public void navigate(int direction){
-        if(!canNavigate(direction))return; // Bordas: somente retorno elástico, sem mensagem.
+        if(!canNavigate(direction))return;
         index+=direction;show();
+    }
+    private int slideWidth(){return media!=null&&media.getWidth()>0?media.getWidth():getResources().getDisplayMetrics().widthPixels;}
+    private void previewAdjacent(int direction){
+        if(!canNavigate(direction))return;
+        ImageView chosen=direction>0?nextPreview:previousPreview;
+        if(chosen==null)return;
+        if(adjacentPreview!=chosen&&adjacentPreview!=null)adjacentPreview.setVisibility(View.GONE);
+        adjacentPreview=chosen;adjacentIndex=index+direction;
+        adjacentPreview.setVisibility(View.VISIBLE);
+    }
+    /** Both ZoomImageView and PlayerSurface use the same horizontal carousel. */
+    @Override public void swipe(float offset){
+        if(media==null||swipeAnimating)return;
+        int direction=offset<0?1:-1;
+        float translation=offset;
+        if(!canNavigate(direction)){
+            // Resistance is only used at the first/last media item.
+            translation=Math.copySign(Math.min(slideWidth()*.13f,Math.abs(offset)*.26f),offset);
+            if(adjacentPreview!=null)adjacentPreview.setVisibility(View.GONE);
+        }else{
+            previewAdjacent(direction);
+            if(adjacentPreview!=null)adjacentPreview.setTranslationX(translation+direction*(slideWidth()+Ui.dp(this,14)));
+        }
+        swipeOffset=translation;media.setTranslationX(translation);
+    }
+    @Override public void swipeEnd(float offset,boolean commit){
+        if(media==null||swipeAnimating)return;
+        int direction=adjacentIndex>=0&&adjacentPreview!=null&&adjacentPreview.getVisibility()==View.VISIBLE
+                ? (adjacentIndex>index?1:-1) : (offset<0?1:-1);
+        boolean advance=commit&&Math.abs(offset)>Ui.dp(this,20)&&canNavigate(direction);
+        if(swipeAnimator!=null)swipeAnimator.cancel();
+        float start=swipeOffset;
+        float finish=advance?-direction*(slideWidth()+Ui.dp(this,14)):0f;
+        swipeAnimating=true;
+        swipeAnimator=ValueAnimator.ofFloat(start,finish);
+        swipeAnimator.setDuration(advance?240:300);
+        swipeAnimator.setInterpolator(new DecelerateInterpolator());
+        swipeAnimator.addUpdateListener(a->{
+            float x=(float)a.getAnimatedValue();swipeOffset=x;
+            if(media!=null)media.setTranslationX(x);
+            if(adjacentPreview!=null&&adjacentPreview.getVisibility()==View.VISIBLE){
+                adjacentPreview.setTranslationX(x+direction*(slideWidth()+Ui.dp(this,14)));
+            }
+        });
+        swipeAnimator.addListener(new AnimatorListenerAdapter(){
+            private boolean cancelled;
+            @Override public void onAnimationCancel(Animator a){cancelled=true;}
+            @Override public void onAnimationEnd(Animator a){
+                swipeAnimator=null;swipeAnimating=false;
+                if(cancelled||isFinishing()||isDestroyed())return;
+                if(advance&&canNavigate(direction))navigate(direction);
+                else{
+                    swipeOffset=0;if(media!=null)media.setTranslationX(0);
+                    if(adjacentPreview!=null)adjacentPreview.setVisibility(View.GONE);
+                }
+            }
+        });
+        swipeAnimator.start();
     }
     private void buildHud(){
         hud=new FrameLayout(this);hud.setBackground(Ui.bg(0xE81B1724,22,this));

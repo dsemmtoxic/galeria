@@ -16,8 +16,9 @@ public final class MediaRepo {
     private final Context context;private final Listener listener;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private final ExecutorService disk=Executors.newSingleThreadExecutor();
     private final AtomicBoolean busy=new AtomicBoolean(false),again=new AtomicBoolean(false);
-    private boolean active,registered,dirty=true;private boolean trash;
+    private boolean active,registered,dirty=true,hydrated;private boolean trash;
     private long lastCheck,generation=Long.MIN_VALUE;
     private int permissionState=-1;
     private volatile int queryCount;
@@ -36,13 +37,13 @@ public final class MediaRepo {
             context.getContentResolver().registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,true,observer);
             registered=true;
         }catch(Exception ignored){}
-        if(dirty)refresh(true);else if(SystemClock.elapsedRealtime()-lastCheck>30000)refresh(false);
+        if(dirty||!hydrated)refresh(false);else if(SystemClock.elapsedRealtime()-lastCheck>30000)refresh(false);
         main.postDelayed(poll,60000);
     }
     public void stop() {
         active=false;main.removeCallbacks(poll);main.removeCallbacks(debounce);
     }
-    public void close(){stop();if(registered)try{context.getContentResolver().unregisterContentObserver(observer);}catch(Exception ignored){}registered=false;worker.shutdownNow();}
+    public void close(){stop();if(registered)try{context.getContentResolver().unregisterContentObserver(observer);}catch(Exception ignored){}registered=false;worker.shutdownNow();disk.shutdown();}
     private int permissions(){int hash=FileAccess.direct(context)?1:0;for(String p:new String[]{"android.permission.READ_EXTERNAL_STORAGE","android.permission.READ_MEDIA_IMAGES","android.permission.READ_MEDIA_VIDEO","android.permission.READ_MEDIA_VISUAL_USER_SELECTED"})hash=hash*31+context.checkSelfPermission(p);return hash;}
     public void trash(boolean t){if(trash==t)return;trash=t;signature=Long.MIN_VALUE;dirty=true;if(active)refresh(true);}
     private long mediaGeneration(){
@@ -55,11 +56,30 @@ public final class MediaRepo {
         if(!busy.compareAndSet(false,true)){again.set(true);return;}
         final boolean queryTrash=trash;
         final boolean requested=dirty;
-        dirty=false;
+        final boolean first=!hydrated;
+        final int permissionFingerprint=permissions();
+        hydrated=true;dirty=false;
         worker.execute(()->{
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             long gen=mediaGeneration();
-            if(!requested&&gen!=Long.MIN_VALUE&&gen==generation){main.post(()->{lastCheck=SystemClock.elapsedRealtime();busy.set(false);if(again.getAndSet(false)&&active)refresh(false);});return;}
+            LibrarySnapshot.Data snapshot=null;
+            if(first&&!queryTrash){
+                // Use an on-disk index immediately after a cold start, but never across permission changes.
+                snapshot=LibrarySnapshot.read(context,permissionFingerprint);
+                if(snapshot!=null){
+                    LibrarySnapshot.Data cached=snapshot;
+                    main.post(()->{
+                        if(active&&!trash&&permissions()==permissionFingerprint&&signature==Long.MIN_VALUE){
+                            signature=cached.signature;generation=cached.generation;
+                            GalleryCache.remember(cached.items);listener.onMedia(cached.items,null);
+                        }
+                    });
+                }
+            }
+            boolean unchanged=gen!=Long.MIN_VALUE && ((snapshot!=null&&snapshot.generation==gen)||(!requested&&gen==generation));
+            // A real user-initiated refresh always re-queries; normal launches with a valid
+            // MediaStore generation need not scan the entire library again.
+            if(!force&&unchanged){main.post(()->{lastCheck=SystemClock.elapsedRealtime();busy.set(false);if(!active){hydrated=false;dirty=true;}if(again.getAndSet(false)&&active)refresh(false);});return;}
             List<MediaItem> result=new ArrayList<>();String error=null;
             try{queryCount++;result=query(context,queryTrash);}catch(Exception e){error="Não foi possível ler a biblioteca. Verifique o acesso às fotos e aos vídeos.";}
             long hash=1125899906842597L;
@@ -67,8 +87,12 @@ public final class MediaRepo {
             final long sig=hash;final List<MediaItem> items=result;final String message=error;
             main.post(()->{
                 lastCheck=SystemClock.elapsedRealtime();generation=gen;busy.set(false);
-                if(!active){dirty=true;return;}
-                if(active && queryTrash==trash && (signature!=sig || message!=null)){signature=sig;if(!queryTrash&&message==null)GalleryCache.remember(items);listener.onMedia(items,message);}
+                // Persist even when the activity moves to the background before the scan finishes.
+                if(!queryTrash&&message==null&&queryTrash==trash&&permissions()==permissionFingerprint&&!disk.isShutdown()){
+                    try{disk.execute(()->LibrarySnapshot.write(context,items,permissionFingerprint,gen,sig));}catch(RejectedExecutionException ignored){}
+                }
+                if(!active){hydrated=false;dirty=true;return;}
+                if(queryTrash==trash && (signature!=sig || message!=null)){signature=sig;if(!queryTrash&&message==null)GalleryCache.remember(items);listener.onMedia(items,message);}
                 if(again.getAndSet(false) && active)refresh(false);
             });
         });

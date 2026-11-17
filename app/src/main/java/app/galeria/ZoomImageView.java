@@ -14,6 +14,8 @@ public final class ZoomImageView extends View implements Drawable.Callback {
         void tap();
         void navigate(int direction);
         boolean canNavigate(int direction);
+        void swipe(float offset);
+        void swipeEnd(float offset,boolean commit);
         void verticalStart(boolean right);
         void vertical(boolean right,float delta);
         void verticalEnd();
@@ -39,6 +41,7 @@ public final class ZoomImageView extends View implements Drawable.Callback {
         });
         pinch=new ScaleGestureDetector(c,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
             @Override public boolean onScaleBegin(ScaleGestureDetector d){
+                if(drag==1)listener.swipeEnd(0,false);
                 multiple=true;drag=0;swipe=0;if(animator!=null)animator.cancel();return prefs.bool("pinch",true)&&image!=null;
             }
             @Override public boolean onScale(ScaleGestureDetector d){
@@ -104,7 +107,7 @@ public final class ZoomImageView extends View implements Drawable.Callback {
             canvas.drawText(message==null?"":message,getWidth()/2f,getHeight()/2f,p);return;
         }
         int w=image.getIntrinsicWidth(),h=image.getIntrinsicHeight();
-        canvas.save();canvas.translate(getWidth()/2f+panX+swipe,getHeight()/2f+panY);canvas.scale(fit*zoom,fit*zoom);canvas.rotate(rotation);canvas.translate(-w/2f,-h/2f);image.setBounds(0,0,w,h);image.draw(canvas);canvas.restore();
+        canvas.save();canvas.translate(getWidth()/2f+panX,getHeight()/2f+panY);canvas.scale(fit*zoom,fit*zoom);canvas.rotate(rotation);canvas.translate(-w/2f,-h/2f);image.setBounds(0,0,w,h);image.draw(canvas);canvas.restore();
     }
     private void animateZoom(float x,float y){
         if(animator!=null)animator.cancel();
@@ -129,7 +132,7 @@ public final class ZoomImageView extends View implements Drawable.Callback {
                     if(Math.abs(dy)>Math.abs(dx)*1.25f&&(right?prefs.bool("brightness_gesture",true):prefs.bool("volume_gesture",true))){drag=2;listener.verticalStart(right);}
                     else if(Math.abs(dx)>Math.abs(dy)*1.25f&&prefs.bool("swipe_nav",true))drag=1;
                 }
-                if(drag==1){swipe=dx*.8f;invalidate();}
+                if(drag==1){swipe=dx*.9f;listener.swipe(swipe);}
                 if(drag==2)listener.vertical(right,-dy/Math.max(1,getHeight()));
             }
             lastX=e.getX();lastY=e.getY();
@@ -137,27 +140,13 @@ public final class ZoomImageView extends View implements Drawable.Callback {
         if(action==MotionEvent.ACTION_POINTER_UP){lastX=e.getX();lastY=e.getY();}
         if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){
             if(drag==2)listener.verticalEnd();
-            if(drag==1 && action==MotionEvent.ACTION_UP && Math.abs(e.getX()-downX)>getWidth()*.22f){
-                final int direction=e.getX()<downX?1:-1;float start=swipe;
-                if(listener.canNavigate(direction)){
-                    animator=ValueAnimator.ofFloat(start,direction==1?-getWidth():getWidth());animator.setDuration(150);
-                    animator.addUpdateListener(a->{swipe=(float)a.getAnimatedValue();invalidate();});
-                    animator.addListener(new android.animation.AnimatorListenerAdapter(){
-                        private boolean cancelled;
-                        @Override public void onAnimationCancel(android.animation.Animator a){cancelled=true;}
-                        @Override public void onAnimationEnd(android.animation.Animator a){if(cancelled)return;swipe=0;invalidate();listener.navigate(direction);}
-                    });animator.start();
-                }else elasticReturn(start);
-            }else if(Math.abs(swipe)>1)elasticReturn(swipe);
+            if(drag==1){
+                boolean commit=action==MotionEvent.ACTION_UP&&Math.abs(e.getX()-downX)>getWidth()*.22f;
+                listener.swipeEnd(swipe,commit);swipe=0;
+            }
             drag=0;
         }
         return true;
-    }
-    private void elasticReturn(float start){
-        if(animator!=null)animator.cancel();
-        animator=ValueAnimator.ofFloat(start,-start*.08f,0f);
-        animator.setDuration(280);animator.setInterpolator(new DecelerateInterpolator());
-        animator.addUpdateListener(a->{swipe=(float)a.getAnimatedValue();invalidate();});animator.start();
     }
     @Override public boolean performClick(){super.performClick();return true;}
     @Override public void invalidateDrawable(Drawable d){invalidate();}

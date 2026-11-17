@@ -15,12 +15,15 @@ assert 'prefs.integer("tab"' not in main
 assert 'prefs.set("tab"' not in main
 assert 'onNewIntent' in main and 'Intent.CATEGORY_LAUNCHER' in main
 assert 'boolean canNavigate(int direction)' in zoom and 'canNavigate(int direction)' in viewer
-assert 'if(listener.canNavigate(direction))' in zoom and 'else elasticReturn(start)' in zoom
-assert 'gestures.canNavigate(direction)' in player
+assert 'listener.swipe(swipe)' in zoom and 'listener.swipeEnd(swipe,commit)' in zoom
+assert 'gestures.swipe(dx*.9f)' in player and 'gestures.swipeEnd(' in player
 assert 'Primeiro arquivo.' not in viewer and 'Último arquivo.' not in viewer
+assert 'previewAdjacent(direction)' in viewer and 'Math.copySign' in viewer
 assert 's.kind==SearchIndex.ALBUM){setResult(' not in search
 assert 'recent_destination_albums' in prefs and 'Math.min(5,list.size())' in prefs
 assert 'new AlbumPicker(' in actions and 'prefs.rememberAlbum(album.key)' in actions
 assert 'send(Context c,List<MediaItem> items,MediaItem.Album album' in transfers
 assert 'FileAccess.albumFolder(album)' in transfers
+assert 'LibrarySnapshot.read' in (b/'MediaRepo.java').read_text()
+assert 'new ThumbnailSkeleton()' in (b/'ThumbLoader.java').read_text()
 print('Verificações estáticas passaram (não substituem compilação/teste no Android).')

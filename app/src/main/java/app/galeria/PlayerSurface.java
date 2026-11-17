@@ -131,7 +131,7 @@ public final class PlayerSurface extends FrameLayout implements TextureView.Surf
             int a=e.getActionMasked();
             if(a==MotionEvent.ACTION_DOWN){downX=lastX=e.getX();downY=lastY=e.getY();drag=0;multiple=false;doubleTap=false;touching=true;stateChanged.run();getParent().requestDisallowInterceptTouchEvent(true);}
             if(e.getPointerCount()>1){
-                if(!multiple){MotionEvent cancel=MotionEvent.obtain(e);cancel.setAction(MotionEvent.ACTION_CANCEL);taps.onTouchEvent(cancel);cancel.recycle();if(drag==2)gestures.verticalEnd();drag=0;texture.setTranslationX(0);}
+                if(!multiple){MotionEvent cancel=MotionEvent.obtain(e);cancel.setAction(MotionEvent.ACTION_CANCEL);taps.onTouchEvent(cancel);cancel.recycle();if(drag==2)gestures.verticalEnd();if(drag==1)gestures.swipeEnd(0,false);drag=0;}
                 multiple=true;doubleTap=false;
             }
             pinch.onTouchEvent(e);if(!multiple)taps.onTouchEvent(e);
@@ -146,7 +146,7 @@ public final class PlayerSurface extends FrameLayout implements TextureView.Surf
                         else if(Math.abs(dx)>Math.abs(dy)*1.25f&&prefs.bool("swipe_nav",true))drag=1;
                     }
                     if(drag==2)gestures.vertical(right,-dy/Math.max(1,getHeight()));
-                    if(drag==1)texture.setTranslationX(dx*.6f);
+                    if(drag==1)gestures.swipe(dx*.9f);
                 }
                 lastX=e.getX();lastY=e.getY();
             }
@@ -154,15 +154,8 @@ public final class PlayerSurface extends FrameLayout implements TextureView.Surf
                 touching=false;getParent().requestDisallowInterceptTouchEvent(false);
                 if(drag==2)gestures.verticalEnd();
                 if(drag==1){
-                    int direction=e.getX()<downX?1:-1;
-                    if(a==MotionEvent.ACTION_UP&&Math.abs(e.getX()-downX)>getWidth()*.22f&&gestures.canNavigate(direction)){
-                        texture.animate().translationX(0).setDuration(150).withEndAction(()->gestures.navigate(direction)).start();
-                    }else{
-                        float from=texture.getTranslationX();
-                        texture.animate().cancel();
-                        texture.setTranslationX(from);
-                        texture.animate().translationX(-from*.08f).setDuration(110).withEndAction(()->texture.animate().translationX(0).setDuration(170).start()).start();
-                    }
+                    boolean commit=a==MotionEvent.ACTION_UP&&Math.abs(e.getX()-downX)>getWidth()*.22f;
+                    gestures.swipeEnd((e.getX()-downX)*.9f,commit);
                 }
                 drag=0;stateChanged.run();
             }return true;
